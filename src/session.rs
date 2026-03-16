@@ -204,6 +204,10 @@ impl ConnectionSession<Ready> {
         self.state.subscriptions.unsubscribe_multi_spindle_result();
     }
 
+    pub fn subscribe_relay_function(&mut self, relay: u16) {
+        self.state.subscriptions.subscribe_relay_function(relay);
+    }
+
     /// Disconnect and return to initial state
     #[allow(dead_code)]
     pub fn disconnect(self) -> ConnectionSession<Disconnected> {

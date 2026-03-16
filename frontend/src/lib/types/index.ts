@@ -1,5 +1,5 @@
 // Re-export all types
-export type { DeviceState, MultiSpindleConfig, FailureConfig } from './DeviceState';
+export type { DeviceState, MultiSpindleConfig, FailureConfig, ToolDirection } from './DeviceState';
 export type { TighteningResult } from './TighteningResult';
 export type { SpindleResult, MultiSpindleResult, MultiSpindleStatus } from './MultiSpindle';
 export type { SimulatorEvent } from './SimulatorEvent';
@@ -32,4 +32,8 @@ export interface FailureConfigRequest {
 	delay_max_ms?: number;
 	corruption_rate?: number;
 	force_disconnect_rate?: number;
+}
+
+export interface ToolDirectionRequest {
+	direction: import('./DeviceState').ToolDirection;
 }

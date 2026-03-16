@@ -1,5 +1,6 @@
 use crate::handler::data::TighteningResult;
 use crate::multi_spindle::{MultiSpindleResult, MultiSpindleStatus};
+use crate::state::ToolDirection;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
@@ -16,6 +17,9 @@ pub enum SimulatorEvent {
 
     /// Tool state changed (enabled/disabled)
     ToolStateChanged { enabled: bool },
+
+    /// Tool direction changed (CW/CCW)
+    ToolDirectionChanged { direction: ToolDirection },
 
     /// Batch was completed
     BatchCompleted { total: u32 },

@@ -5,7 +5,13 @@ import { addTighteningResult, autoTighteningProgress } from './tightening';
 import { WEBSOCKET } from '$lib/config/constants';
 import { getWebSocketUrl } from '$lib/config/env';
 import { logger } from '$lib/utils';
-import type { SimulatorEvent, DeviceState, MultiSpindleConfig, FailureConfig } from '$lib/types';
+import type {
+	SimulatorEvent,
+	DeviceState,
+	MultiSpindleConfig,
+	FailureConfig,
+	ToolDirection
+} from '$lib/types';
 
 export const connected = writable(false);
 export const reconnectAttempts = writable(0);
@@ -35,6 +41,7 @@ interface BackendDeviceState {
 	controller_name: string;
 	supplier_code: string;
 	tool_enabled: boolean;
+	tool_direction: ToolDirection;
 	device_fsm_state: string; // Maps to tool_state in frontend
 	vehicle_id: string | null; // Maps to vehicle_id_number in frontend
 	current_job_id: number | null;
@@ -56,6 +63,7 @@ function isDeviceState(data: unknown): data is BackendDeviceState {
 		data !== null &&
 		'cell_id' in data &&
 		'tool_enabled' in data &&
+		'tool_direction' in data &&
 		'device_fsm_state' in data &&
 		'current_pset_id' in data &&
 		'multi_spindle_config' in data
@@ -72,6 +80,7 @@ function mapDeviceState(data: BackendDeviceState): DeviceState {
 		channel_id: data.channel_id,
 		controller_name: data.controller_name,
 		tool_enabled: data.tool_enabled,
+		tool_direction: data.tool_direction,
 		tool_state: data.device_fsm_state, // Backend sends device_fsm_state, map to tool_state
 		vehicle_id_number: data.vehicle_id ?? null, // Backend sends vehicle_id, map to vehicle_id_number
 		current_job_id: data.current_job_id,
@@ -200,6 +209,14 @@ const eventHandlers: EventHandlerMap = {
 		});
 		addEvent(event);
 	},
+	ToolDirectionChanged: (event) => {
+		deviceState.update((state) => {
+			if (state) {
+				state.tool_direction = event.direction;
+			}
+			return state;
+		});
+	},
 	AutoTighteningProgress: (event) => {
 		autoTighteningProgress.set({
 			counter: event.counter,
@@ -248,6 +265,9 @@ function dispatchEvent(event: SimulatorEvent): void {
 			break;
 		case 'ToolStateChanged':
 			eventHandlers.ToolStateChanged(event);
+			break;
+		case 'ToolDirectionChanged':
+			eventHandlers.ToolDirectionChanged(event);
 			break;
 		case 'AutoTighteningProgress':
 			eventHandlers.AutoTighteningProgress(event);

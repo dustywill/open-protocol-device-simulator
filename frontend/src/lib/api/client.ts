@@ -5,7 +5,9 @@ import type {
 	TighteningRequest,
 	FailureConfig,
 	FailureConfigRequest,
-	Pset
+	Pset,
+	ToolDirection,
+	ToolDirectionRequest
 } from '$lib/types';
 import { getApiBaseUrl } from '$lib/config/env';
 
@@ -77,6 +79,16 @@ export class ApiClient {
 			method: 'POST',
 			body: JSON.stringify(payload)
 		});
+	}
+
+	async setToolDirection(direction: ToolDirection) {
+		return this.request<{ success: boolean; message: string; direction: ToolDirection }>(
+			'/tool/direction',
+			{
+				method: 'POST',
+				body: JSON.stringify({ direction } satisfies ToolDirectionRequest)
+			}
+		);
 	}
 
 	/**

@@ -43,6 +43,57 @@ async fn test_get_state_endpoint() {
     assert_eq!(state_json["channel_id"], 1);
     assert_eq!(state_json["controller_name"], "OpenProtocolSimulator");
     assert_eq!(state_json["tool_enabled"], true);
+    assert_eq!(state_json["tool_direction"], "CW");
+}
+
+/// Test POST /tool/direction endpoint
+#[tokio::test]
+async fn test_set_tool_direction_endpoint() {
+    use open_protocol_device_simulator::{
+        DeviceState, ObservableState, SimulatorEvent, config, http_server,
+        state::ToolDirection,
+    };
+
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, mut receiver) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(Arc::clone(&state), broadcaster);
+    let app = http_server::create_router(observable_state, config::Settings::default());
+
+    let payload = json!({
+        "direction": "CCW"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/tool/direction")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(result["success"], true);
+    assert_eq!(result["direction"], "CCW");
+
+    let device_state = state.read().unwrap();
+    assert_eq!(device_state.tool_direction, ToolDirection::Ccw);
+    assert!(device_state.direction_ccw_relay_active());
+    drop(device_state);
+
+    match receiver.recv().await.unwrap() {
+        SimulatorEvent::ToolDirectionChanged { direction } => {
+            assert_eq!(direction, ToolDirection::Ccw);
+        }
+        other => panic!("Expected ToolDirectionChanged event, got {:?}", other),
+    }
 }
 
 /// Test POST /simulate/tightening endpoint

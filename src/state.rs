@@ -3,12 +3,19 @@ use crate::device_fsm::DeviceFSMState;
 use crate::failure_simulator::FailureConfig;
 use crate::multi_spindle::{MultiSpindleConfig, MultiSpindleResultRecord};
 use crate::tightening_tracker::TighteningTracker;
-use chrono::Local;
-use serde::Serialize;
+use chrono::{Local, NaiveDateTime};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
 const MULTI_SPINDLE_HISTORY_LIMIT: usize = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum ToolDirection {
+    Cw,
+    Ccw,
+}
 
 /// Represents the internal state of the simulated device
 #[derive(Debug, Clone, Serialize)]
@@ -33,6 +40,8 @@ pub struct DeviceState {
 
     // Tool state
     pub tool_enabled: bool,
+    pub tool_direction: ToolDirection,
+    pub tool_start_switch_active: bool,
 
     // Vehicle/Job identification
     pub vehicle_id: Option<String>,
@@ -44,6 +53,9 @@ pub struct DeviceState {
     // Recent multi-spindle results used for MID 0100 replay.
     #[serde(skip)]
     pub multi_spindle_result_history: VecDeque<MultiSpindleResultRecord>,
+
+    #[serde(skip)]
+    controller_time_offset_seconds: i64,
 
     // Communication failure injection configuration
     pub failure_config: FailureConfig,
@@ -59,14 +71,17 @@ impl DeviceState {
             supplier_code: "SIM".to_string(),
             current_pset_id: Some(1),
             current_pset_name: Some("Default".to_string()),
-            current_pset_last_change: Self::current_timestamp(),
+            current_pset_last_change: Self::current_timestamp_for_offset(0),
             tightening_tracker: TighteningTracker::new(),
             device_fsm_state: DeviceFSMState::idle(),
             tool_enabled: true,
+            tool_direction: ToolDirection::Cw,
+            tool_start_switch_active: false,
             vehicle_id: None,
             current_job_id: Some(1),
             multi_spindle_config: MultiSpindleConfig::default(),
             multi_spindle_result_history: VecDeque::new(),
+            controller_time_offset_seconds: 0,
             failure_config: FailureConfig::default(),
         }
     }
@@ -80,14 +95,17 @@ impl DeviceState {
             supplier_code: config.supplier_code.clone(),
             current_pset_id: Some(1),
             current_pset_name: Some("Default".to_string()),
-            current_pset_last_change: Self::current_timestamp(),
+            current_pset_last_change: Self::current_timestamp_for_offset(0),
             tightening_tracker: TighteningTracker::new(),
             device_fsm_state: DeviceFSMState::idle(),
             tool_enabled: true,
+            tool_direction: ToolDirection::Cw,
+            tool_start_switch_active: false,
             vehicle_id: None,
             current_job_id: Some(1),
             multi_spindle_config: MultiSpindleConfig::default(),
             multi_spindle_result_history: VecDeque::new(),
+            controller_time_offset_seconds: 0,
             failure_config: FailureConfig::default(),
         }
     }
@@ -106,7 +124,7 @@ impl DeviceState {
     pub fn set_pset(&mut self, pset_id: u32, pset_name: Option<String>) {
         self.current_pset_id = Some(pset_id);
         self.current_pset_name = pset_name;
-        self.current_pset_last_change = Self::current_timestamp();
+        self.current_pset_last_change = self.current_timestamp();
     }
 
     /// Set the active job ID
@@ -137,6 +155,40 @@ impl DeviceState {
     /// Disable the tool
     pub fn disable_tool(&mut self) {
         self.tool_enabled = false;
+    }
+
+    /// Set tool direction (maps to the relay state used by external clients).
+    pub fn set_tool_direction(&mut self, direction: ToolDirection) -> bool {
+        if self.tool_direction == direction {
+            return false;
+        }
+        self.tool_direction = direction;
+        true
+    }
+
+    /// Relay 22 is active only when the tool direction is CCW.
+    pub fn direction_ccw_relay_active(&self) -> bool {
+        matches!(self.tool_direction, ToolDirection::Ccw)
+    }
+
+    pub fn set_tool_start_switch_active(&mut self, active: bool) -> bool {
+        if self.tool_start_switch_active == active {
+            return false;
+        }
+        self.tool_start_switch_active = active;
+        true
+    }
+
+    pub fn set_controller_time(&mut self, timestamp: NaiveDateTime) {
+        self.controller_time_offset_seconds =
+            timestamp
+                .signed_duration_since(Local::now().naive_local())
+                .num_seconds();
+        self.current_pset_last_change = self.current_timestamp();
+    }
+
+    pub fn current_protocol_timestamp(&self) -> String {
+        self.current_timestamp()
     }
 
     /// Set vehicle ID
@@ -224,8 +276,14 @@ impl DeviceState {
         &self.multi_spindle_config
     }
 
-    fn current_timestamp() -> String {
-        Local::now().format("%Y-%m-%d:%H:%M:%S").to_string()
+    fn current_timestamp(&self) -> String {
+        Self::current_timestamp_for_offset(self.controller_time_offset_seconds)
+    }
+
+    fn current_timestamp_for_offset(offset_seconds: i64) -> String {
+        (Local::now() + chrono::Duration::seconds(offset_seconds))
+            .format("%Y-%m-%d:%H:%M:%S")
+            .to_string()
     }
 }
 
@@ -267,6 +325,18 @@ mod tests {
         assert!(!state.tool_enabled);
         state.enable_tool();
         assert!(state.tool_enabled);
+        assert_eq!(state.tool_direction, ToolDirection::Cw);
+    }
+
+    #[test]
+    fn test_tool_direction_state() {
+        let mut state = DeviceState::new();
+        assert!(!state.direction_ccw_relay_active());
+
+        assert!(state.set_tool_direction(ToolDirection::Ccw));
+        assert_eq!(state.tool_direction, ToolDirection::Ccw);
+        assert!(state.direction_ccw_relay_active());
+        assert!(!state.set_tool_direction(ToolDirection::Ccw));
     }
 
     #[test]

@@ -90,7 +90,7 @@ async fn send_with_failure_injection(
 }
 
 fn is_ack_only_mid(mid: u16) -> bool {
-    matches!(mid, 16 | 53 | 62 | 93 | 102)
+    matches!(mid, 16 | 53 | 62 | 93 | 102 | 218)
 }
 
 fn build_pset_selected_broadcast(observable_state: &ObservableState) -> Option<protocol::Response> {
@@ -106,6 +106,27 @@ fn build_pset_selected_broadcast(observable_state: &ObservableState) -> Option<p
         15,
         1,
         handler::data::PsetSelected::new(pset_id, last_change_timestamp),
+    ))
+}
+
+fn relay_active(observable_state: &ObservableState, relay_number: u16) -> Option<bool> {
+    let state = observable_state.read();
+    match relay_number {
+        20 => Some(state.tool_start_switch_active),
+        22 => Some(state.direction_ccw_relay_active()),
+        _ => None,
+    }
+}
+
+fn build_relay_function_broadcast(
+    observable_state: &ObservableState,
+    relay_number: u16,
+) -> Option<protocol::Response> {
+    let active = relay_active(observable_state, relay_number)?;
+    Some(protocol::Response::from_data(
+        217,
+        1,
+        handler::data::RelayFunction::new(relay_number, active),
     ))
 }
 
@@ -138,6 +159,11 @@ fn apply_session_side_effects(
             session.subscribe_multi_spindle_result(subscription);
         }
         103 => session.unsubscribe_multi_spindle_result(),
+        216 => {
+            let relay = handler::relay_function_subscribe::parse_relay_function(message)
+                .expect("MID 0216 request was already validated by its handler");
+            session.subscribe_relay_function(relay);
+        }
         _ => {}
     }
 }
@@ -356,6 +382,45 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                                     }
                                                 }
 
+                                                if message.mid == 216 {
+                                                    let relay = handler::relay_function_subscribe::parse_relay_function(&message)
+                                                        .expect("MID 0216 request was already validated by its handler");
+                                                    if let Some(response) =
+                                                        build_relay_function_broadcast(
+                                                            &conn_observable_state,
+                                                            relay,
+                                                        )
+                                                    {
+                                                        let response_bytes =
+                                                            protocol::serializer::serialize_response(
+                                                                &response,
+                                                            );
+                                                        println!(
+                                                            "Sending initial MID 0217 for relay {} to subscribed client ({})",
+                                                            relay,
+                                                            session.addr()
+                                                        );
+
+                                                        match send_with_failure_injection(
+                                                            &mut framed,
+                                                            response_bytes,
+                                                            &conn_observable_state,
+                                                            "MID 0217 initial relay state",
+                                                        )
+                                                        .await
+                                                        {
+                                                            Ok(false) => {}
+                                                            Err(e) => {
+                                                                eprintln!(
+                                                                    "send error during initial relay broadcast: {e}"
+                                                                );
+                                                                break;
+                                                            }
+                                                            Ok(true) => {}
+                                                        }
+                                                    }
+                                                }
+
                                                 if message.mid == 100
                                                     && let Err(e) = replay_multi_spindle_results(
                                                         &session,
@@ -463,6 +528,42 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                             SimulatorEvent::ToolStateChanged { enabled } => {
                                 println!("Tool state changed: {}", if enabled { "enabled" } else { "disabled" });
                                 // No standard MID for tool state broadcasts in Open Protocol
+                            }
+                            SimulatorEvent::ToolDirectionChanged { direction } => {
+                                println!("Tool direction changed: {:?}", direction);
+                                if session
+                                    .subscriptions()
+                                    .is_subscribed_to_relay_function(22)
+                                {
+                                    let Some(response) =
+                                        build_relay_function_broadcast(&conn_observable_state, 22)
+                                    else {
+                                        continue;
+                                    };
+                                    let response_bytes =
+                                        protocol::serializer::serialize_response(&response);
+                                    println!(
+                                        "Broadcasting MID 0217 to subscribed client ({}) for relay 22 ({:?})",
+                                        session.addr(),
+                                        direction
+                                    );
+
+                                    match send_with_failure_injection(
+                                        &mut framed,
+                                        response_bytes,
+                                        &conn_observable_state,
+                                        "MID 0217 relay function broadcast",
+                                    )
+                                    .await
+                                    {
+                                        Ok(false) => {}
+                                        Err(e) => {
+                                            eprintln!("send error during broadcast: {e}");
+                                            break;
+                                        }
+                                        Ok(true) => {}
+                                    }
+                                }
                             }
                             SimulatorEvent::BatchCompleted { total } => {
                                 println!("Batch completed: {} tightenings", total);
@@ -598,6 +699,7 @@ mod tests {
         assert!(is_ack_only_mid(62));
         assert!(is_ack_only_mid(93));
         assert!(is_ack_only_mid(102));
+        assert!(is_ack_only_mid(218));
         assert!(!is_ack_only_mid(60));
         assert!(!is_ack_only_mid(61));
     }

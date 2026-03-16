@@ -6,7 +6,7 @@ use crate::handler::data::TighteningResult;
 use crate::multi_spindle::{MultiSpindleResultRecord, MultiSpindleStatus, generate_multi_spindle_results};
 use crate::observable_state::ObservableState;
 use crate::pset::{self, SharedPsetRepository};
-use crate::state::DeviceState;
+use crate::state::{DeviceState, ToolDirection};
 use axum::{
     Router,
     extract::{
@@ -99,7 +99,7 @@ fn build_tightening_result(
         angle_max: params.angle_max,
         angle_target: params.target_angle,
         angle,
-        timestamp: chrono::Local::now().format("%Y-%m-%d:%H:%M:%S").to_string(),
+        timestamp: state.current_protocol_timestamp(),
         last_pset_change: None,
         batch_status,
         tightening_id: Some(info.tightening_id),
@@ -168,6 +168,7 @@ pub fn create_router(observable_state: ObservableState, settings: Settings) -> R
         .route("/auto-tightening/stop", post(stop_auto_tightening))
         .route("/auto-tightening/status", get(get_auto_tightening_status))
         .route("/config/multi-spindle", post(configure_multi_spindle))
+        .route("/tool/direction", post(set_tool_direction))
         .route(
             "/config/failure",
             get(get_failure_config).post(update_failure_config),
@@ -205,6 +206,7 @@ pub async fn start_http_server(observable_state: ObservableState, settings: Sett
     println!("  POST   /auto-tightening/stop      - Stop automated tightening simulation");
     println!("  GET    /auto-tightening/status    - Get auto-tightening status");
     println!("  POST   /config/multi-spindle      - Configure multi-spindle mode");
+    println!("  POST   /tool/direction            - Set tool direction (CW/CCW)");
     println!("  GET    /config/failure            - Get failure injection configuration");
     println!("  POST   /config/failure            - Update failure injection configuration");
     println!("  GET    /psets                     - Get all PSETs");
@@ -874,6 +876,43 @@ struct MultiSpindleConfigResponse {
     enabled: bool,
     spindle_count: u8,
     sync_id: u32,
+}
+
+#[derive(Deserialize)]
+struct ToolDirectionRequest {
+    direction: ToolDirection,
+}
+
+#[derive(Serialize)]
+struct ToolDirectionResponse {
+    success: bool,
+    message: String,
+    direction: ToolDirection,
+}
+
+fn tool_direction_label(direction: ToolDirection) -> &'static str {
+    match direction {
+        ToolDirection::Cw => "CW",
+        ToolDirection::Ccw => "CCW",
+    }
+}
+
+async fn set_tool_direction(
+    AxumState(server_state): AxumState<ServerState>,
+    Json(payload): Json<ToolDirectionRequest>,
+) -> impl IntoResponse {
+    server_state
+        .observable_state
+        .set_tool_direction(payload.direction);
+
+    (
+        StatusCode::OK,
+        Json(ToolDirectionResponse {
+            success: true,
+            message: format!("Tool direction set to {}", tool_direction_label(payload.direction)),
+            direction: payload.direction,
+        }),
+    )
 }
 
 /// Handler for POST /config/multi-spindle endpoint

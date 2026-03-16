@@ -1,10 +1,12 @@
 import type { TighteningResult } from './TighteningResult';
 import type { MultiSpindleResult, MultiSpindleStatus } from './MultiSpindle';
+import type { ToolDirection } from './DeviceState';
 
 export type SimulatorEvent =
 	| { type: 'TighteningCompleted'; result: TighteningResult }
 	| { type: 'PsetChanged'; pset_id: number; pset_name: string }
 	| { type: 'ToolStateChanged'; enabled: boolean }
+	| { type: 'ToolDirectionChanged'; direction: ToolDirection }
 	| { type: 'BatchCompleted'; total: number }
 	| { type: 'VehicleIdChanged'; vin: string }
 	| { type: 'MultiSpindleStatusCompleted'; status: MultiSpindleStatus }

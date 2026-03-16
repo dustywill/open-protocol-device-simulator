@@ -4,6 +4,7 @@ pub mod batch_size;
 pub mod communication_start;
 pub mod communication_stop;
 pub mod data;
+pub mod io_device_status_request;
 pub mod job_select;
 pub mod keep_alive;
 pub mod multi_spindle_result_ack;
@@ -16,6 +17,9 @@ pub mod pset_select;
 pub mod pset_selected_ack;
 pub mod pset_subscription;
 pub mod pset_unsubscribe;
+pub mod relay_function_ack;
+pub mod relay_function_subscribe;
+pub mod set_time;
 pub mod tightening_result_ack;
 pub mod tightening_result_subscription;
 pub mod tightening_result_unsubscribe;
@@ -173,6 +177,7 @@ pub fn create_default_registry(observable_state: ObservableState) -> HandlerRegi
             observable_state.clone(),
         )),
     );
+    registry.register(82, Box::new(set_time::SetTimeHandler::new(observable_state.clone())));
     registry.register(
         50,
         Box::new(vehicle_id_download::VehicleIdDownloadHandler::new(
@@ -224,6 +229,14 @@ pub fn create_default_registry(observable_state: ObservableState) -> HandlerRegi
         63,
         Box::new(tightening_result_unsubscribe::TighteningResultUnsubscribeHandler),
     );
+    registry.register(
+        214,
+        Box::new(io_device_status_request::IoDeviceStatusRequestHandler::new(
+            observable_state.clone(),
+        )),
+    );
+    registry.register(216, Box::new(relay_function_subscribe::RelayFunctionSubscribeHandler));
+    registry.register(218, Box::new(relay_function_ack::RelayFunctionAckHandler));
     registry.register(9999, Box::new(keep_alive::KeepAliveHandler));
 
     registry

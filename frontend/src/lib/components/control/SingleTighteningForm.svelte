@@ -4,7 +4,7 @@
 	import { showToast } from '$lib/stores/ui';
 	import { Section, Button, FormField } from '$lib/components/ui';
 	import { getPsetTargets, formatErrorMessage, validateRange } from '$lib/utils';
-	import type { Pset, TighteningRequest } from '$lib/types';
+	import type { Pset, TighteningRequest, ToolDirection } from '$lib/types';
 
 	interface Props {
 		currentPset: Pset | undefined;
@@ -19,6 +19,8 @@
 		angle: 40.0
 	});
 	let isSubmitting = $state(false);
+	let isUpdatingDirection = $state(false);
+	let selectedDirection = $state<ToolDirection>('CW');
 	let validationErrors = $state({
 		torque: '',
 		angle: ''
@@ -34,6 +36,10 @@
 	);
 
 	// Real-time validation using $effect
+	$effect(() => {
+		selectedDirection = $deviceState?.tool_direction ?? 'CW';
+	});
+
 	$effect(() => {
 		if (!usePsetValues) {
 			validationErrors.torque = validateRange(
@@ -54,6 +60,24 @@
 			validationErrors.angle = '';
 		}
 	});
+
+	async function handleDirectionChange(direction: ToolDirection) {
+		if (direction === ($deviceState?.tool_direction ?? 'CW')) {
+			selectedDirection = direction;
+			return;
+		}
+
+		selectedDirection = direction;
+		isUpdatingDirection = true;
+		try {
+			await api.setToolDirection(direction);
+		} catch (error) {
+			selectedDirection = $deviceState?.tool_direction ?? 'CW';
+			showToast({ type: 'error', message: formatErrorMessage('set tool direction', error) });
+		} finally {
+			isUpdatingDirection = false;
+		}
+	}
 
 	async function handleSubmit() {
 		if (!isToolEnabled) {
@@ -106,6 +130,77 @@
 				<span>Tool is disabled. Single tightening simulation is unavailable.</span>
 			</div>
 		{/if}
+
+		<div class="rounded-lg border border-surface-200-700-token bg-surface-100-800-token p-4">
+			<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+				<div class="space-y-3">
+					<div>
+						<p class="text-xs uppercase tracking-wide text-surface-600-300-token">
+							Tool Direction
+						</p>
+						<p class="mt-1 text-sm text-surface-600 dark:text-surface-400">
+							CCW means relay 22 is active. CW means relay 22 is off.
+						</p>
+					</div>
+					<div class="flex items-center gap-2 text-sm font-medium text-surface-700 dark:text-surface-300">
+						<span
+							class="inline-flex h-3 w-3 rounded-full"
+							class:bg-success-500={isToolEnabled}
+							class:bg-error-500={!isToolEnabled}
+						></span>
+						<span>Enabled</span>
+					</div>
+					<div class="inline-flex rounded-lg border border-surface-200-700-token bg-surface-50-900-token p-1">
+						<label class="cursor-pointer">
+							<input
+								class="sr-only"
+								type="radio"
+								name="tool-direction"
+								value="CW"
+								checked={selectedDirection === 'CW'}
+								disabled={isUpdatingDirection}
+								onchange={() => handleDirectionChange('CW')}
+							/>
+							<span
+								class="block rounded px-4 py-2 text-sm font-semibold transition-colors"
+								class:bg-primary-500={selectedDirection === 'CW'}
+								class:text-white={selectedDirection === 'CW'}
+								class:opacity-60={selectedDirection !== 'CW'}
+							>
+								CW
+							</span>
+						</label>
+						<label class="cursor-pointer">
+							<input
+								class="sr-only"
+								type="radio"
+								name="tool-direction"
+								value="CCW"
+								checked={selectedDirection === 'CCW'}
+								disabled={isUpdatingDirection}
+								onchange={() => handleDirectionChange('CCW')}
+							/>
+							<span
+								class="block rounded px-4 py-2 text-sm font-semibold transition-colors"
+								class:bg-primary-500={selectedDirection === 'CCW'}
+								class:text-white={selectedDirection === 'CCW'}
+								class:opacity-60={selectedDirection !== 'CCW'}
+							>
+								CCW
+							</span>
+						</label>
+					</div>
+				</div>
+
+				<Button
+					type="submit"
+					disabled={isSubmitting || !isFormValid || !isToolEnabled || isUpdatingDirection}
+					class="w-full lg:w-auto"
+				>
+					{isSubmitting ? 'Simulating...' : 'Tighten'}
+				</Button>
+			</div>
+		</div>
 
 		<!-- Toggle between PSET and Manual -->
 		<div
@@ -198,12 +293,5 @@
 			/>
 		{/if}
 
-		<Button
-			type="submit"
-			disabled={isSubmitting || !isFormValid || !isToolEnabled}
-			class="w-full sm:w-auto"
-		>
-			{isSubmitting ? 'Simulating...' : 'Simulate Tightening'}
-		</Button>
 	</form>
 </Section>

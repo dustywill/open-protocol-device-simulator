@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub struct MultiSpindleResultSubscription {
@@ -57,6 +58,9 @@ pub struct Subscriptions {
 
     /// Subscribed to job info events (not yet implemented)
     pub job_info: bool,
+
+    /// Subscribed relay functions (MID 0217)
+    pub relay_functions: HashSet<u16>,
 }
 
 impl Subscriptions {
@@ -155,6 +159,18 @@ impl Subscriptions {
         self.multi_spindle_result
     }
 
+    pub fn subscribe_relay_function(&mut self, relay: u16) {
+        self.relay_functions.insert(relay);
+    }
+
+    pub fn is_subscribed_to_relay_function(&self, relay: u16) -> bool {
+        self.relay_functions.contains(&relay)
+    }
+
+    pub fn relay_function_subscriptions(&self) -> &HashSet<u16> {
+        &self.relay_functions
+    }
+
     /// Get count of active subscriptions
     ///
     /// Diagnostic method for subscription statistics.
@@ -184,6 +200,7 @@ impl Subscriptions {
         if self.job_info {
             count += 1;
         }
+        count += self.relay_functions.len();
         count
     }
 
@@ -268,5 +285,17 @@ mod tests {
         assert!(stored.send_only_new_data);
         assert_eq!(stored.future_only_after_result_id, Some(100));
         assert_eq!(subs.multi_spindle_result_revision(), Some(3));
+    }
+
+    #[test]
+    fn test_relay_function_subscriptions() {
+        let mut subs = Subscriptions::new();
+        subs.subscribe_relay_function(22);
+        subs.subscribe_relay_function(20);
+        subs.subscribe_relay_function(22);
+
+        assert!(subs.is_subscribed_to_relay_function(22));
+        assert!(subs.is_subscribed_to_relay_function(20));
+        assert_eq!(subs.relay_function_subscriptions().len(), 2);
     }
 }

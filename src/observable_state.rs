@@ -5,7 +5,7 @@
 //! notifications to WebSocket clients.
 
 use crate::events::{EventBroadcaster, SimulatorEvent};
-use crate::state::DeviceState;
+use crate::state::{DeviceState, ToolDirection};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Wrapper around DeviceState that automatically broadcasts events when state changes
@@ -38,9 +38,17 @@ impl ObservableState {
 
     /// Enable the tool and broadcast the event
     pub fn enable_tool(&self) {
-        {
+        let changed = {
             let mut state = self.state.write().unwrap();
-            state.enable_tool();
+            if state.tool_enabled {
+                false
+            } else {
+                state.enable_tool();
+                true
+            }
+        };
+        if !changed {
+            return;
         }
         let _ = self
             .broadcaster
@@ -49,13 +57,35 @@ impl ObservableState {
 
     /// Disable the tool and broadcast the event
     pub fn disable_tool(&self) {
-        {
+        let changed = {
             let mut state = self.state.write().unwrap();
-            state.disable_tool();
+            if !state.tool_enabled {
+                false
+            } else {
+                state.disable_tool();
+                true
+            }
+        };
+        if !changed {
+            return;
         }
         let _ = self
             .broadcaster
             .send(SimulatorEvent::ToolStateChanged { enabled: false });
+    }
+
+    /// Set tool direction and broadcast the event
+    pub fn set_tool_direction(&self, direction: ToolDirection) {
+        let changed = {
+            let mut state = self.state.write().unwrap();
+            state.set_tool_direction(direction)
+        };
+        if !changed {
+            return;
+        }
+        let _ = self
+            .broadcaster
+            .send(SimulatorEvent::ToolDirectionChanged { direction });
     }
 
     /// Set the parameter set and broadcast the event

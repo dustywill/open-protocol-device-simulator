@@ -587,3 +587,71 @@ fn test_batch_lifecycle() {
         }
     }
 }
+
+#[test]
+fn test_set_time() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(Arc::clone(&state), broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 39,
+        mid: 82,
+        revision: 1,
+        data: b"2026-03-16:14:35:51".to_vec(),
+    };
+
+    let response = registry
+        .handle_message(&message)
+        .expect("Handler should succeed");
+    assert_eq!(response.mid, 5);
+}
+
+#[test]
+fn test_io_device_status_request() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    {
+        let mut device_state = state.write().unwrap();
+        device_state.set_tool_direction(open_protocol_device_simulator::state::ToolDirection::Ccw);
+    }
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(state, broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 22,
+        mid: 214,
+        revision: 1,
+        data: b"00".to_vec(),
+    };
+
+    let response = registry
+        .handle_message(&message)
+        .expect("Handler should succeed");
+    assert_eq!(response.mid, 215);
+    let text = String::from_utf8(response.data).unwrap();
+    assert!(text.contains("0100"));
+    assert!(text.contains("0200"));
+    assert!(text.contains("0221"));
+}
+
+#[test]
+fn test_relay_function_subscribe() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(state, broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 23,
+        mid: 216,
+        revision: 1,
+        data: b"022".to_vec(),
+    };
+
+    let response = registry
+        .handle_message(&message)
+        .expect("Handler should succeed");
+    assert_eq!(response.mid, 5);
+}

@@ -1,8 +1,11 @@
+export type ToolDirection = 'CW' | 'CCW';
+
 export interface DeviceState {
 	cell_id: number;
 	channel_id: number;
 	controller_name: string;
 	tool_enabled: boolean;
+	tool_direction: ToolDirection;
 	tool_state: string;
 	vehicle_id_number: string | null;
 	current_job_id: number | null;
