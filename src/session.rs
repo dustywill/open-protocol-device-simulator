@@ -148,8 +148,10 @@ impl ConnectionSession<Ready> {
     }
 
     /// Subscribe to tightening result events (MID 60)
-    pub fn subscribe_tightening_result(&mut self) {
-        self.state.subscriptions.subscribe_tightening_result();
+    pub fn subscribe_tightening_result(&mut self, revision: u8) {
+        self.state
+            .subscriptions
+            .subscribe_tightening_result(revision);
     }
 
     /// Unsubscribe from tightening result events (MID 63)
@@ -188,8 +190,10 @@ impl ConnectionSession<Ready> {
     }
 
     /// Subscribe to multi-spindle result events (MID 100)
-    pub fn subscribe_multi_spindle_result(&mut self) {
-        self.state.subscriptions.subscribe_multi_spindle_result();
+    pub fn subscribe_multi_spindle_result(&mut self, revision: u8) {
+        self.state
+            .subscriptions
+            .subscribe_multi_spindle_result(revision);
     }
 
     /// Unsubscribe from multi-spindle result events (MID 102)
@@ -273,8 +277,9 @@ mod tests {
         assert!(!session.subscriptions().is_subscribed_to_pset_selection());
 
         // Subscribe to tightening results
-        session.subscribe_tightening_result();
+        session.subscribe_tightening_result(2);
         assert!(session.subscriptions().is_subscribed_to_tightening_result());
+        assert_eq!(session.subscriptions().tightening_result_revision(), Some(2));
         assert_eq!(session.subscriptions().active_count(), 1);
 
         // Subscribe to pset selection
@@ -342,8 +347,9 @@ mod tests {
         // Phase 4: Manage subscriptions in Ready state
         assert_eq!(session.subscriptions().active_count(), 0);
 
-        session.subscribe_tightening_result();
+        session.subscribe_tightening_result(1);
         assert!(session.subscriptions().is_subscribed_to_tightening_result());
+        assert_eq!(session.subscriptions().tightening_result_revision(), Some(1));
 
         session.subscribe_pset_selection();
         assert!(session.subscriptions().is_subscribed_to_pset_selection());
@@ -385,7 +391,7 @@ mod tests {
         let session2 = ConnectionSession::new().connect(test_addr()).authenticate();
 
         // Subscribe session1 but not session2
-        session1.subscribe_tightening_result();
+        session1.subscribe_tightening_result(3);
 
         // Verify isolation
         assert!(
@@ -393,10 +399,15 @@ mod tests {
                 .subscriptions()
                 .is_subscribed_to_tightening_result()
         );
+        assert_eq!(
+            session1.subscriptions().tightening_result_revision(),
+            Some(3)
+        );
         assert!(
             !session2
                 .subscriptions()
                 .is_subscribed_to_tightening_result()
         );
+        assert_eq!(session2.subscriptions().tightening_result_revision(), None);
     }
 }

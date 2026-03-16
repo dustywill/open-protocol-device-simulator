@@ -4,7 +4,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Subscriptions {
     /// Subscribed to tightening result events (MID 0061)
-    pub tightening_result: bool,
+    pub tightening_result: Option<u8>,
 
     /// Subscribed to parameter set selection events (MID 0015)
     pub pset_selection: bool,
@@ -16,7 +16,7 @@ pub struct Subscriptions {
     pub multi_spindle_status: bool,
 
     /// Subscribed to multi-spindle result events (MID 0101)
-    pub multi_spindle_result: bool,
+    pub multi_spindle_result: Option<u8>,
 
     /// Subscribed to alarm events (not yet implemented)
     pub alarm: bool,
@@ -32,13 +32,13 @@ impl Subscriptions {
     }
 
     /// Subscribe to tightening result events
-    pub fn subscribe_tightening_result(&mut self) {
-        self.tightening_result = true;
+    pub fn subscribe_tightening_result(&mut self, revision: u8) {
+        self.tightening_result = Some(revision);
     }
 
     /// Unsubscribe from tightening result events
     pub fn unsubscribe_tightening_result(&mut self) {
-        self.tightening_result = false;
+        self.tightening_result = None;
     }
 
     /// Subscribe to parameter set selection events
@@ -53,6 +53,11 @@ impl Subscriptions {
 
     /// Check if subscribed to tightening results
     pub fn is_subscribed_to_tightening_result(&self) -> bool {
+        self.tightening_result.is_some()
+    }
+
+    /// Get subscribed tightening result revision
+    pub fn tightening_result_revision(&self) -> Option<u8> {
         self.tightening_result
     }
 
@@ -92,17 +97,22 @@ impl Subscriptions {
     }
 
     /// Subscribe to multi-spindle result events
-    pub fn subscribe_multi_spindle_result(&mut self) {
-        self.multi_spindle_result = true;
+    pub fn subscribe_multi_spindle_result(&mut self, revision: u8) {
+        self.multi_spindle_result = Some(revision);
     }
 
     /// Unsubscribe from multi-spindle result events
     pub fn unsubscribe_multi_spindle_result(&mut self) {
-        self.multi_spindle_result = false;
+        self.multi_spindle_result = None;
     }
 
     /// Check if subscribed to multi-spindle result
     pub fn is_subscribed_to_multi_spindle_result(&self) -> bool {
+        self.multi_spindle_result.is_some()
+    }
+
+    /// Get subscribed multi-spindle result revision
+    pub fn multi_spindle_result_revision(&self) -> Option<u8> {
         self.multi_spindle_result
     }
 
@@ -114,7 +124,7 @@ impl Subscriptions {
     #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
         let mut count = 0;
-        if self.tightening_result {
+        if self.tightening_result.is_some() {
             count += 1;
         }
         if self.pset_selection {
@@ -126,7 +136,7 @@ impl Subscriptions {
         if self.multi_spindle_status {
             count += 1;
         }
-        if self.multi_spindle_result {
+        if self.multi_spindle_result.is_some() {
             count += 1;
         }
         if self.alarm {
@@ -157,6 +167,7 @@ mod tests {
     fn test_default_no_subscriptions() {
         let subs = Subscriptions::new();
         assert!(!subs.is_subscribed_to_tightening_result());
+        assert_eq!(subs.tightening_result_revision(), None);
         assert!(!subs.is_subscribed_to_pset_selection());
         assert_eq!(subs.active_count(), 0);
         assert!(!subs.has_any_subscription());
@@ -165,9 +176,10 @@ mod tests {
     #[test]
     fn test_subscribe_tightening_result() {
         let mut subs = Subscriptions::new();
-        subs.subscribe_tightening_result();
+        subs.subscribe_tightening_result(3);
 
         assert!(subs.is_subscribed_to_tightening_result());
+        assert_eq!(subs.tightening_result_revision(), Some(3));
         assert_eq!(subs.active_count(), 1);
         assert!(subs.has_any_subscription());
     }
@@ -175,17 +187,18 @@ mod tests {
     #[test]
     fn test_unsubscribe_tightening_result() {
         let mut subs = Subscriptions::new();
-        subs.subscribe_tightening_result();
+        subs.subscribe_tightening_result(1);
         subs.unsubscribe_tightening_result();
 
         assert!(!subs.is_subscribed_to_tightening_result());
+        assert_eq!(subs.tightening_result_revision(), None);
         assert_eq!(subs.active_count(), 0);
     }
 
     #[test]
     fn test_multiple_subscriptions() {
         let mut subs = Subscriptions::new();
-        subs.subscribe_tightening_result();
+        subs.subscribe_tightening_result(2);
         subs.subscribe_pset_selection();
 
         assert!(subs.is_subscribed_to_tightening_result());
@@ -196,10 +209,11 @@ mod tests {
     #[test]
     fn test_subscribe_idempotent() {
         let mut subs = Subscriptions::new();
-        subs.subscribe_tightening_result();
-        subs.subscribe_tightening_result();
+        subs.subscribe_tightening_result(1);
+        subs.subscribe_tightening_result(3);
 
         assert!(subs.is_subscribed_to_tightening_result());
+        assert_eq!(subs.tightening_result_revision(), Some(3));
         assert_eq!(subs.active_count(), 1);
     }
 }

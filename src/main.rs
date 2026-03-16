@@ -159,7 +159,7 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
 
                                         // Track subscription state based on MID using session
                                         match message.mid {
-                                            60 => session.subscribe_tightening_result(),
+                                            60 => session.subscribe_tightening_result(message.revision),
                                             63 => session.unsubscribe_tightening_result(),
                                             14 => session.subscribe_pset_selection(),
                                             17 => session.unsubscribe_pset_selection(),
@@ -167,7 +167,7 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                             54 => session.unsubscribe_vehicle_id(),
                                             90 => session.subscribe_multi_spindle_status(),
                                             92 => session.unsubscribe_multi_spindle_status(),
-                                            100 => session.subscribe_multi_spindle_result(),
+                                            100 => session.subscribe_multi_spindle_result(message.revision),
                                             103 => session.unsubscribe_multi_spindle_result(),
                                             _ => {}
                                         }

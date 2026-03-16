@@ -73,3 +73,7 @@ logs/
 # OS
 Thumbs.db
 Desktop.ini
+
+.planning/
+CLAUDE.md
+config.toml
