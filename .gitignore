@@ -74,6 +74,6 @@ logs/
 Thumbs.db
 Desktop.ini
 
-.planning/
+.planning/*
 CLAUDE.md
 config.toml
