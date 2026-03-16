@@ -263,8 +263,16 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                         match event {
                             SimulatorEvent::TighteningCompleted { result } => {
                                 if session.subscriptions().is_subscribed_to_tightening_result() {
+                                    let revision = session
+                                        .subscriptions()
+                                        .tightening_result_revision()
+                                        .unwrap_or(1);
                                     println!("Broadcasting MID 0061 to subscribed client ({})", session.addr());
-                                    let response = protocol::Response::from_data(61, 1, result);
+                                    let response = protocol::Response::new(
+                                        61,
+                                        revision,
+                                        result.serialize_for_revision(revision),
+                                    );
                                     let response_bytes = protocol::serializer::serialize_response(&response);
 
                                     match send_with_failure_injection(
