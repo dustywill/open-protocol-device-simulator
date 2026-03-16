@@ -14,7 +14,14 @@
  * @returns The API base URL (e.g., 'http://localhost:8081')
  */
 export function getApiBaseUrl(): string {
-	return import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081';
+	const configured = import.meta.env.VITE_API_BASE_URL;
+	if (configured) return configured;
+
+	if (typeof window !== 'undefined') {
+		return window.location.origin;
+	}
+
+	return 'http://localhost:8081';
 }
 
 /**

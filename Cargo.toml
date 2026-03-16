@@ -20,7 +20,7 @@ thiserror = "2.0.17"
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
 tokio-util = { version = "0.7.18", features = ["codec"] }
 tower = "0.5.3"
-tower-http = { version = "0.6.8", features = ["cors"] }
+tower-http = { version = "0.6.8", features = ["cors", "fs"] }
 
 [dev-dependencies]
 http-body-util = "0.1.3"

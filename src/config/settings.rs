@@ -43,6 +43,10 @@ pub struct ServerConfig {
     /// Capacity of the event broadcast channel (default: 100)
     #[serde(default = "default_event_channel_capacity")]
     pub event_channel_capacity: usize,
+
+    /// Directory containing the built frontend assets to serve over HTTP.
+    #[serde(default = "default_web_root")]
+    pub web_root: PathBuf,
 }
 
 impl Default for ServerConfig {
@@ -52,6 +56,7 @@ impl Default for ServerConfig {
             http_port: default_http_port(),
             bind_address: default_bind_address(),
             event_channel_capacity: default_event_channel_capacity(),
+            web_root: default_web_root(),
         }
     }
 }
@@ -70,6 +75,10 @@ fn default_bind_address() -> String {
 
 fn default_event_channel_capacity() -> usize {
     100
+}
+
+fn default_web_root() -> PathBuf {
+    PathBuf::from("web")
 }
 
 /// Device identification configuration.
@@ -187,6 +196,7 @@ mod tests {
         assert_eq!(settings.server.tcp_port, 8080);
         assert_eq!(settings.server.http_port, 8081);
         assert_eq!(settings.server.bind_address, "0.0.0.0");
+        assert_eq!(settings.server.web_root, PathBuf::from("web"));
         assert_eq!(settings.device.cell_id, 1);
         assert_eq!(settings.device.controller_name, "OpenProtocolSimulator");
         assert_eq!(settings.database.path, PathBuf::from("simulator.db"));

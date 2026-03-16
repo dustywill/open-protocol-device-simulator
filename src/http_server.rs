@@ -19,9 +19,11 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::cors::{Any, CorsLayer};
 
 /// Shared state for HTTP server
@@ -161,7 +163,7 @@ pub fn create_router(observable_state: ObservableState, settings: Settings) -> R
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let api_router = Router::new()
         .route("/state", get(get_state))
         .route("/simulate/tightening", post(simulate_tightening))
         .route("/auto-tightening/start", post(start_auto_tightening))
@@ -181,7 +183,29 @@ pub fn create_router(observable_state: ObservableState, settings: Settings) -> R
         .route("/psets/{id}/select", post(select_pset))
         .route("/ws/events", get(websocket_handler))
         .layer(cors)
-        .with_state(server_state)
+        .with_state(server_state.clone());
+
+    if let Some(static_router) = build_static_router(&server_state.settings.server.web_root) {
+        api_router.merge(static_router)
+    } else {
+        api_router
+    }
+}
+
+fn build_static_router(web_root: &PathBuf) -> Option<Router> {
+    if !web_root.exists() {
+        return None;
+    }
+
+    let index_file = web_root.join("index.html");
+    if index_file.exists() {
+        Some(
+            Router::new()
+                .fallback_service(ServeDir::new(web_root).not_found_service(ServeFile::new(index_file))),
+        )
+    } else {
+        Some(Router::new().fallback_service(ServeDir::new(web_root)))
+    }
 }
 
 /// Start the HTTP server for state inspection and simulation control

@@ -24,6 +24,9 @@ bind_address = "0.0.0.0"
 # Capacity of the event broadcast channel
 event_channel_capacity = 100
 
+# Directory containing the built frontend assets served by the HTTP server
+web_root = "web"
+
 [device]
 # Cell ID reported in Open Protocol messages
 cell_id = 1
