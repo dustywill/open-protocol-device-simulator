@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { api } from '$lib/api/client';
 import { deviceState } from './device';
 import { addEvent } from './events';
 import { addTighteningResult, autoTighteningProgress } from './tightening';
@@ -23,6 +24,7 @@ export const connectionHealth = writable(100); // Overall connection health scor
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let stateSyncTimer: ReturnType<typeof setInterval> | null = null;
 
 // Ping/pong latency tracking
 let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -30,6 +32,7 @@ let lastPingTime: number = 0;
 let latencyMeasurements: number[] = [];
 const MAX_LATENCY_SAMPLES = 10;
 const PING_INTERVAL_MS = 5000; // Send ping every 5 seconds
+const STATE_SYNC_INTERVAL_MS = 3000;
 
 /**
  * Backend DeviceState interface matches what the API sends
@@ -183,6 +186,33 @@ function stopPingInterval() {
 	latencyMeasurements = [];
 }
 
+async function syncDeviceStateFromApi() {
+	try {
+		const state = await api.getDeviceState();
+		deviceState.set(state);
+	} catch (error) {
+		logger.warn('Failed to sync device state from API:', error);
+	}
+}
+
+function startStateSyncInterval() {
+	if (stateSyncTimer) {
+		clearInterval(stateSyncTimer);
+	}
+
+	void syncDeviceStateFromApi();
+	stateSyncTimer = setInterval(() => {
+		void syncDeviceStateFromApi();
+	}, STATE_SYNC_INTERVAL_MS);
+}
+
+function stopStateSyncInterval() {
+	if (stateSyncTimer) {
+		clearInterval(stateSyncTimer);
+		stateSyncTimer = null;
+	}
+}
+
 /**
  * Type utility for creating a fully-typed event handler map
  * Each handler receives the exact event variant for its type key
@@ -327,6 +357,7 @@ export function connectWebSocket(url: string = getWebSocketUrl()) {
 
 		// Start ping/pong interval for latency measurement
 		startPingInterval();
+		startStateSyncInterval();
 	};
 
 	ws.onmessage = (event) => {
@@ -365,6 +396,7 @@ export function connectWebSocket(url: string = getWebSocketUrl()) {
 
 		// Stop ping interval
 		stopPingInterval();
+		stopStateSyncInterval();
 
 		// Reset metrics on disconnect
 		connectionHealth.set(0);
@@ -399,6 +431,7 @@ export function disconnectWebSocket() {
 
 	// Stop ping interval
 	stopPingInterval();
+	stopStateSyncInterval();
 
 	// Close and cleanup WebSocket
 	if (ws) {

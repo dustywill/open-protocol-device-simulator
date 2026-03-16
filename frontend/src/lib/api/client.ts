@@ -13,6 +13,22 @@ import { getApiBaseUrl } from '$lib/config/env';
 
 const API_BASE = getApiBaseUrl();
 
+interface BackendDeviceState {
+	cell_id: number;
+	channel_id: number;
+	controller_name: string;
+	supplier_code: string;
+	tool_enabled: boolean;
+	tool_direction: ToolDirection;
+	device_fsm_state: string;
+	vehicle_id: string | null;
+	current_job_id: number | null;
+	current_pset_id: number | null;
+	current_pset_name: string | null;
+	multi_spindle_config: DeviceState['multi_spindle_config'];
+	failure_config: DeviceState['failure_config'];
+}
+
 /**
  * API client for communicating with the device simulator backend
  */
@@ -66,7 +82,21 @@ export class ApiClient {
 	 * @returns Device state with cell_id, tool status, PSET info, etc.
 	 */
 	async getDeviceState() {
-		return this.request<DeviceState>('/state');
+		const state = await this.request<BackendDeviceState>('/state');
+		return {
+			cell_id: state.cell_id,
+			channel_id: state.channel_id,
+			controller_name: state.controller_name,
+			tool_enabled: state.tool_enabled,
+			tool_direction: state.tool_direction,
+			tool_state: state.device_fsm_state,
+			vehicle_id_number: state.vehicle_id ?? null,
+			current_job_id: state.current_job_id,
+			current_pset_id: state.current_pset_id,
+			current_pset_name: state.current_pset_name,
+			multi_spindle_config: state.multi_spindle_config,
+			failure_config: state.failure_config
+		} satisfies DeviceState;
 	}
 
 	/**
