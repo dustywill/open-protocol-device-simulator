@@ -1,10 +1,13 @@
 use crate::config::DeviceConfig;
 use crate::device_fsm::DeviceFSMState;
 use crate::failure_simulator::FailureConfig;
-use crate::multi_spindle::MultiSpindleConfig;
+use crate::multi_spindle::{MultiSpindleConfig, MultiSpindleResultRecord};
 use crate::tightening_tracker::TighteningTracker;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
+
+const MULTI_SPINDLE_HISTORY_LIMIT: usize = 100;
 
 /// Represents the internal state of the simulated device
 #[derive(Debug, Clone, Serialize)]
@@ -35,6 +38,10 @@ pub struct DeviceState {
     // Multi-spindle configuration
     pub multi_spindle_config: MultiSpindleConfig,
 
+    // Recent multi-spindle results used for MID 0100 replay.
+    #[serde(skip)]
+    pub multi_spindle_result_history: VecDeque<MultiSpindleResultRecord>,
+
     // Communication failure injection configuration
     pub failure_config: FailureConfig,
 }
@@ -55,6 +62,7 @@ impl DeviceState {
             vehicle_id: None,
             current_job_id: Some(1),
             multi_spindle_config: MultiSpindleConfig::default(),
+            multi_spindle_result_history: VecDeque::new(),
             failure_config: FailureConfig::default(),
         }
     }
@@ -74,6 +82,7 @@ impl DeviceState {
             vehicle_id: None,
             current_job_id: Some(1),
             multi_spindle_config: MultiSpindleConfig::default(),
+            multi_spindle_result_history: VecDeque::new(),
             failure_config: FailureConfig::default(),
         }
     }
@@ -149,6 +158,42 @@ impl DeviceState {
         self.multi_spindle_config = MultiSpindleConfig::disable();
     }
 
+    pub fn record_multi_spindle_result(&mut self, record: MultiSpindleResultRecord) {
+        self.multi_spindle_result_history.push_back(record);
+        while self.multi_spindle_result_history.len() > MULTI_SPINDLE_HISTORY_LIMIT {
+            self.multi_spindle_result_history.pop_front();
+        }
+    }
+
+    pub fn latest_multi_spindle_result_id(&self) -> Option<u32> {
+        self.multi_spindle_result_history
+            .back()
+            .map(MultiSpindleResultRecord::result_id)
+    }
+
+    pub fn replay_multi_spindle_results(
+        &self,
+        data_no_system: Option<u32>,
+    ) -> Vec<MultiSpindleResultRecord> {
+        let Some(after_result_id) = data_no_system.filter(|value| *value != 0) else {
+            return self.multi_spindle_result_history.iter().cloned().collect();
+        };
+
+        let found = self
+            .multi_spindle_result_history
+            .iter()
+            .any(|record| record.result_id() == after_result_id);
+        if !found {
+            return self.multi_spindle_result_history.iter().cloned().collect();
+        }
+
+        self.multi_spindle_result_history
+            .iter()
+            .filter(|record| record.result_id() > after_result_id)
+            .cloned()
+            .collect()
+    }
+
     /// Check if multi-spindle mode is enabled
     ///
     /// Query method for checking multi-spindle state.
@@ -221,5 +266,41 @@ mod tests {
             let s = state.read().unwrap();
             assert_eq!(s.current_pset_id, Some(5));
         }
+    }
+
+    #[test]
+    fn test_multi_spindle_result_history_replay() {
+        use crate::multi_spindle::{MultiSpindleResult, MultiSpindleResultRecord, SpindleResult};
+
+        let mut state = DeviceState::new();
+        for result_id in 1..=3 {
+            state.record_multi_spindle_result(MultiSpindleResultRecord {
+                result: MultiSpindleResult::new(
+                    result_id,
+                    100,
+                    vec![SpindleResult::ok(1, 5000, 1800), SpindleResult::ok(2, 5000, 1800)],
+                ),
+                vin_number: "VIN".to_string(),
+                job_id: 1,
+                pset_id: 1,
+                batch_size: 0,
+                batch_counter: result_id,
+                batch_status: 2,
+                torque_min: 4500,
+                torque_max: 5500,
+                torque_target: 5000,
+                angle_min: 170,
+                angle_max: 190,
+                angle_target: 180,
+                last_change_timestamp: "2026-01-01:00:00:00".to_string(),
+            });
+        }
+
+        let replay = state.replay_multi_spindle_results(Some(2));
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].result_id(), 3);
+
+        let missing_anchor_replay = state.replay_multi_spindle_results(Some(99));
+        assert_eq!(missing_anchor_replay.len(), 3);
     }
 }

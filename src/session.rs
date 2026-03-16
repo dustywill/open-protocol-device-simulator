@@ -1,4 +1,4 @@
-use crate::subscriptions::Subscriptions;
+use crate::subscriptions::{MultiSpindleResultSubscription, Subscriptions};
 use std::net::SocketAddr;
 use std::time::Instant;
 
@@ -190,10 +190,13 @@ impl ConnectionSession<Ready> {
     }
 
     /// Subscribe to multi-spindle result events (MID 100)
-    pub fn subscribe_multi_spindle_result(&mut self, revision: u8) {
+    pub fn subscribe_multi_spindle_result(
+        &mut self,
+        subscription: MultiSpindleResultSubscription,
+    ) {
         self.state
             .subscriptions
-            .subscribe_multi_spindle_result(revision);
+            .subscribe_multi_spindle_result(subscription);
     }
 
     /// Unsubscribe from multi-spindle result events (MID 102)
@@ -409,5 +412,22 @@ mod tests {
                 .is_subscribed_to_tightening_result()
         );
         assert_eq!(session2.subscriptions().tightening_result_revision(), None);
+    }
+
+    #[test]
+    fn test_multi_spindle_subscription_metadata_is_preserved() {
+        let mut session = ConnectionSession::new().connect(test_addr()).authenticate();
+        let subscription = MultiSpindleResultSubscription::new(3, Some(25), true, Some(40));
+
+        session.subscribe_multi_spindle_result(subscription);
+
+        let stored = session
+            .subscriptions()
+            .multi_spindle_result_subscription()
+            .unwrap();
+        assert_eq!(stored.revision, 3);
+        assert_eq!(stored.data_no_system, Some(25));
+        assert!(stored.send_only_new_data);
+        assert_eq!(stored.future_only_after_result_id, Some(40));
     }
 }

@@ -38,6 +38,9 @@ pub enum HandlerError {
     #[error("Unsupported revision {revision} for MID {mid}")]
     RevisionUnsupported { mid: u16, revision: u8 },
 
+    #[error("Invalid data for MID {0}")]
+    InvalidData(u16),
+
     #[error("Handler error: {0}")]
     #[allow(dead_code)]
     Processing(String),
@@ -50,6 +53,7 @@ impl HandlerError {
             Self::RevisionUnsupported { mid, .. } => {
                 data::ErrorResponse::revision_unsupported(*mid)
             }
+            Self::InvalidData(mid) => data::ErrorResponse::invalid_data(*mid),
             Self::Processing(_) => data::ErrorResponse::generic(0),
         };
 

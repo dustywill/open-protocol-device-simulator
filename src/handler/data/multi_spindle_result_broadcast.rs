@@ -1,4 +1,4 @@
-use crate::multi_spindle::MultiSpindleResult;
+use crate::multi_spindle::{MultiSpindleResult, MultiSpindleResultRecord};
 use crate::protocol::field::FieldBuilder;
 use crate::protocol::response_data::ResponseData;
 
@@ -49,6 +49,25 @@ impl MultiSpindleResultBroadcast {
             angle_max: 190,
             angle_target: 180,
             last_change_timestamp: chrono::Local::now().format("%Y-%m-%d:%H:%M:%S").to_string(),
+        }
+    }
+
+    pub fn from_record(record: &MultiSpindleResultRecord) -> Self {
+        Self {
+            result: record.result.clone(),
+            vin_number: record.vin_number.clone(),
+            job_id: record.job_id,
+            pset_id: record.pset_id,
+            batch_size: record.batch_size,
+            batch_counter: record.batch_counter,
+            batch_status: record.batch_status,
+            torque_min: record.torque_min,
+            torque_max: record.torque_max,
+            torque_target: record.torque_target,
+            angle_min: record.angle_min,
+            angle_max: record.angle_max,
+            angle_target: record.angle_target,
+            last_change_timestamp: record.last_change_timestamp.clone(),
         }
     }
 }

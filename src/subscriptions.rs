@@ -1,5 +1,39 @@
 use serde::Serialize;
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub struct MultiSpindleResultSubscription {
+    pub revision: u8,
+    pub data_no_system: Option<u32>,
+    pub send_only_new_data: bool,
+    #[serde(skip)]
+    pub future_only_after_result_id: Option<u32>,
+}
+
+impl MultiSpindleResultSubscription {
+    pub fn new(
+        revision: u8,
+        data_no_system: Option<u32>,
+        send_only_new_data: bool,
+        latest_result_id: Option<u32>,
+    ) -> Self {
+        Self {
+            revision,
+            data_no_system,
+            send_only_new_data,
+            future_only_after_result_id: if send_only_new_data {
+                latest_result_id
+            } else {
+                None
+            },
+        }
+    }
+
+    pub fn should_send_live_result(&self, result_id: u32) -> bool {
+        self.future_only_after_result_id
+            .is_none_or(|latest| result_id > latest)
+    }
+}
+
 /// Manages client subscription state for various event types
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Subscriptions {
@@ -16,7 +50,7 @@ pub struct Subscriptions {
     pub multi_spindle_status: bool,
 
     /// Subscribed to multi-spindle result events (MID 0101)
-    pub multi_spindle_result: Option<u8>,
+    pub multi_spindle_result: Option<MultiSpindleResultSubscription>,
 
     /// Subscribed to alarm events (not yet implemented)
     pub alarm: bool,
@@ -97,8 +131,8 @@ impl Subscriptions {
     }
 
     /// Subscribe to multi-spindle result events
-    pub fn subscribe_multi_spindle_result(&mut self, revision: u8) {
-        self.multi_spindle_result = Some(revision);
+    pub fn subscribe_multi_spindle_result(&mut self, subscription: MultiSpindleResultSubscription) {
+        self.multi_spindle_result = Some(subscription);
     }
 
     /// Unsubscribe from multi-spindle result events
@@ -113,6 +147,11 @@ impl Subscriptions {
 
     /// Get subscribed multi-spindle result revision
     pub fn multi_spindle_result_revision(&self) -> Option<u8> {
+        self.multi_spindle_result.map(|subscription| subscription.revision)
+    }
+
+    /// Get the full multi-spindle result subscription state
+    pub fn multi_spindle_result_subscription(&self) -> Option<MultiSpindleResultSubscription> {
         self.multi_spindle_result
     }
 
@@ -215,5 +254,19 @@ mod tests {
         assert!(subs.is_subscribed_to_tightening_result());
         assert_eq!(subs.tightening_result_revision(), Some(3));
         assert_eq!(subs.active_count(), 1);
+    }
+
+    #[test]
+    fn test_multi_spindle_result_subscription_tracks_replay_options() {
+        let mut subs = Subscriptions::new();
+        let subscription = MultiSpindleResultSubscription::new(3, Some(42), true, Some(100));
+        subs.subscribe_multi_spindle_result(subscription);
+
+        let stored = subs.multi_spindle_result_subscription().unwrap();
+        assert_eq!(stored.revision, 3);
+        assert_eq!(stored.data_no_system, Some(42));
+        assert!(stored.send_only_new_data);
+        assert_eq!(stored.future_only_after_result_id, Some(100));
+        assert_eq!(subs.multi_spindle_result_revision(), Some(3));
     }
 }

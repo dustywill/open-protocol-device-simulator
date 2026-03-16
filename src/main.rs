@@ -89,6 +89,86 @@ async fn send_with_failure_injection(
     Ok(true)
 }
 
+fn apply_session_side_effects(
+    message: &protocol::Message,
+    session: &mut session::ConnectionSession<session::Ready>,
+    observable_state: &ObservableState,
+) {
+    match message.mid {
+        60 => session.subscribe_tightening_result(message.revision),
+        63 => session.unsubscribe_tightening_result(),
+        14 => session.subscribe_pset_selection(),
+        17 => session.unsubscribe_pset_selection(),
+        51 => session.subscribe_vehicle_id(),
+        54 => session.unsubscribe_vehicle_id(),
+        90 => session.subscribe_multi_spindle_status(),
+        92 => session.unsubscribe_multi_spindle_status(),
+        100 => {
+            let request = handler::multi_spindle_result_subscribe::parse_subscribe_request(message)
+                .expect("MID 0100 request was already validated by its handler");
+            let latest_result_id = {
+                let state = observable_state.read();
+                state.latest_multi_spindle_result_id()
+            };
+            let subscription = handler::multi_spindle_result_subscribe::into_subscription(
+                message.revision,
+                request,
+                latest_result_id,
+            );
+            session.subscribe_multi_spindle_result(subscription);
+        }
+        103 => session.unsubscribe_multi_spindle_result(),
+        _ => {}
+    }
+}
+
+async fn replay_multi_spindle_results(
+    session: &session::ConnectionSession<session::Ready>,
+    framed: &mut tokio_util::codec::Framed<
+        tokio::net::TcpStream,
+        codec::null_delimited_codec::NullDelimitedCodec,
+    >,
+    observable_state: &ObservableState,
+) -> Result<(), std::io::Error> {
+    let Some(subscription) = session
+        .subscriptions()
+        .multi_spindle_result_subscription()
+    else {
+        return Ok(());
+    };
+
+    if subscription.send_only_new_data {
+        return Ok(());
+    }
+
+    let records = {
+        let state = observable_state.read();
+        state.replay_multi_spindle_results(subscription.data_no_system)
+    };
+
+    for record in records {
+        let response = protocol::Response::from_data(
+            101,
+            subscription.revision,
+            handler::data::MultiSpindleResultBroadcast::from_record(&record),
+        );
+        let response_bytes = protocol::serializer::serialize_response(&response);
+
+        match send_with_failure_injection(
+            framed,
+            response_bytes,
+            observable_state,
+            "MID 0101 replayed multi-spindle result",
+        )
+        .await?
+        {
+            true | false => {}
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let settings = config::load_config().expect("Failed to load configuration");
@@ -157,21 +237,6 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                     Ok(message) => {
                                         println!("Parsed MID {}, revision {}", message.mid, message.revision);
 
-                                        // Track subscription state based on MID using session
-                                        match message.mid {
-                                            60 => session.subscribe_tightening_result(message.revision),
-                                            63 => session.unsubscribe_tightening_result(),
-                                            14 => session.subscribe_pset_selection(),
-                                            17 => session.unsubscribe_pset_selection(),
-                                            51 => session.subscribe_vehicle_id(),
-                                            54 => session.unsubscribe_vehicle_id(),
-                                            90 => session.subscribe_multi_spindle_status(),
-                                            92 => session.unsubscribe_multi_spindle_status(),
-                                            100 => session.subscribe_multi_spindle_result(message.revision),
-                                            103 => session.unsubscribe_multi_spindle_result(),
-                                            _ => {}
-                                        }
-
                                         // Handle the message
                                         match registry.handle_message(&message) {
                                             Ok(response) => {
@@ -197,6 +262,12 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                                     }
                                                 }
 
+                                                apply_session_side_effects(
+                                                    &message,
+                                                    &mut session,
+                                                    &conn_observable_state,
+                                                );
+
                                                 // Special handling for MID 51 (vehicle ID subscription)
                                                 // Send VIN immediately after subscription is confirmed
                                                 if message.mid == 51 {
@@ -221,6 +292,18 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                                         }
                                                         Ok(true) => {}
                                                     }
+                                                }
+
+                                                if message.mid == 100
+                                                    && let Err(e) = replay_multi_spindle_results(
+                                                        &session,
+                                                        &mut framed,
+                                                        &conn_observable_state,
+                                                    )
+                                                    .await
+                                                {
+                                                    eprintln!("send error during MID 0101 replay: {e}");
+                                                    break;
                                                 }
                                             }
                                             Err(e) => {
@@ -366,22 +449,42 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                 }
                             }
                             SimulatorEvent::MultiSpindleResultCompleted { result } => {
-                                if session.subscriptions().is_subscribed_to_multi_spindle_result() {
+                                if let Some(subscription) = session
+                                    .subscriptions()
+                                    .multi_spindle_result_subscription()
+                                {
+                                    if !subscription.should_send_live_result(result.result_id) {
+                                        continue;
+                                    }
+
                                     println!("Broadcasting MID 0101 to subscribed client ({}): result_id {}, sync_id {}, status {}",
                                         session.addr(), result.result_id, result.sync_id,
                                         if result.is_ok() { "OK" } else { "NOK" });
 
-                                    // Create MID 0101 broadcast with multi-spindle result data
-                                    let result_data = handler::data::MultiSpindleResultBroadcast::new(
-                                        result,
-                                        String::new(), // VIN (not available in session context)
-                                        1,             // job_id
-                                        1,             // pset_id
-                                        0,             // batch_size
-                                        0,             // batch_counter
-                                        2,             // batch_status
+                                    let result_record = {
+                                        let state = conn_observable_state.read();
+                                        state
+                                            .multi_spindle_result_history
+                                            .iter()
+                                            .rev()
+                                            .find(|record| record.result_id() == result.result_id)
+                                            .cloned()
+                                    };
+                                    let Some(result_record) = result_record else {
+                                        eprintln!(
+                                            "missing stored multi-spindle result record for result_id {}",
+                                            result.result_id
+                                        );
+                                        continue;
+                                    };
+
+                                    let response = protocol::Response::from_data(
+                                        101,
+                                        subscription.revision,
+                                        handler::data::MultiSpindleResultBroadcast::from_record(
+                                            &result_record,
+                                        ),
                                     );
-                                    let response = protocol::Response::from_data(101, 1, result_data);
                                     let response_bytes = protocol::serializer::serialize_response(&response);
 
                                     match send_with_failure_injection(

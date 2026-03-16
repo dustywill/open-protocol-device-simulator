@@ -3,7 +3,7 @@ use crate::device_fsm::{DeviceFSM, DeviceFSMState, TighteningParams};
 use crate::events::SimulatorEvent;
 use crate::failure_simulator::FailureConfig;
 use crate::handler::data::TighteningResult;
-use crate::multi_spindle::{MultiSpindleStatus, generate_multi_spindle_results};
+use crate::multi_spindle::{MultiSpindleResultRecord, MultiSpindleStatus, generate_multi_spindle_results};
 use crate::observable_state::ObservableState;
 use crate::pset::{self, SharedPsetRepository};
 use crate::state::DeviceState;
@@ -632,9 +632,44 @@ async fn start_auto_tightening(
                 // Determine overall status for tracker
                 let overall_ok = multi_result.is_ok();
 
+                // Update tracker and persist result before broadcasting it.
+                let (result_record, batch_counter, batch_completed, target_size) = {
+                    let mut s = observable_state.write();
+                    let info = s.tightening_tracker.add_tightening(overall_ok);
+                    let batch_completed = s.tightening_tracker.is_complete();
+                    let target = s.tightening_tracker.batch_size();
+                    let batch_status = if target == 0 {
+                        2
+                    } else if batch_completed && overall_ok {
+                        1
+                    } else {
+                        0
+                    };
+                    let result_record = MultiSpindleResultRecord {
+                        result: multi_result.clone(),
+                        vin_number: s.vehicle_id.clone().unwrap_or_default(),
+                        job_id: s.current_job_id.unwrap_or(1),
+                        pset_id,
+                        batch_size: target,
+                        batch_counter: info.counter,
+                        batch_status,
+                        torque_min: 4500,
+                        torque_max: 5500,
+                        torque_target: 5000,
+                        angle_min: 170,
+                        angle_max: 190,
+                        angle_target: 180,
+                        last_change_timestamp: chrono::Local::now()
+                            .format("%Y-%m-%d:%H:%M:%S")
+                            .to_string(),
+                    };
+                    s.record_multi_spindle_result(result_record.clone());
+                    (result_record, info.counter, batch_completed, target)
+                };
+
                 // Broadcast multi-spindle result (MID 0101)
                 observable_state.broadcast(SimulatorEvent::MultiSpindleResultCompleted {
-                    result: multi_result,
+                    result: result_record.result.clone(),
                 });
 
                 // Broadcast "Completed" status (MID 0091)
@@ -645,15 +680,6 @@ async fn start_auto_tightening(
                 observable_state.broadcast(SimulatorEvent::MultiSpindleStatusCompleted {
                     status: completed_status,
                 });
-
-                // Update tracker with overall status
-                let (batch_counter, batch_completed, target_size) = {
-                    let mut s = observable_state.write();
-                    let info = s.tightening_tracker.add_tightening(overall_ok);
-                    let batch_completed = s.tightening_tracker.is_complete();
-                    let target = s.tightening_tracker.batch_size();
-                    (info.counter, batch_completed, target)
-                };
 
                 // Broadcast auto-tightening progress
                 let is_running = auto_active.load(Ordering::Relaxed);

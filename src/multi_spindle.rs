@@ -139,6 +139,31 @@ pub struct MultiSpindleResult {
     pub spindle_results: Vec<SpindleResult>,
 }
 
+/// Stored multi-spindle result snapshot used for MID 0101 replay behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiSpindleResultRecord {
+    pub result: MultiSpindleResult,
+    pub vin_number: String,
+    pub job_id: u32,
+    pub pset_id: u32,
+    pub batch_size: u32,
+    pub batch_counter: u32,
+    pub batch_status: u8,
+    pub torque_min: i32,
+    pub torque_max: i32,
+    pub torque_target: i32,
+    pub angle_min: i32,
+    pub angle_max: i32,
+    pub angle_target: i32,
+    pub last_change_timestamp: String,
+}
+
+impl MultiSpindleResultRecord {
+    pub fn result_id(&self) -> u32 {
+        self.result.result_id
+    }
+}
+
 impl MultiSpindleResult {
     /// Create a new multi-spindle result
     ///
