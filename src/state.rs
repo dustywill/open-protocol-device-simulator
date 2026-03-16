@@ -103,6 +103,10 @@ impl DeviceState {
         self.current_pset_name = pset_name;
     }
 
+    /// Set the active job ID
+    pub fn set_job_id(&mut self, job_id: u32) {
+        self.current_job_id = Some(job_id);
+    }
     /// Set batch size (enables batch mode)
     pub fn set_batch_size(&mut self, size: u32) {
         self.tightening_tracker.enable_batch(size);

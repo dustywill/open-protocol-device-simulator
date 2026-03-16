@@ -4,6 +4,7 @@ pub mod batch_size;
 pub mod communication_start;
 pub mod communication_stop;
 pub mod data;
+pub mod job_select;
 pub mod keep_alive;
 pub mod multi_spindle_result_ack;
 pub mod multi_spindle_result_subscribe;
@@ -153,6 +154,10 @@ pub fn create_default_registry(observable_state: ObservableState) -> HandlerRegi
         Box::new(batch_increment::BatchIncrementHandler::new(
             observable_state.clone(),
         )),
+    );
+    registry.register(
+        38,
+        Box::new(job_select::JobSelectHandler::new(Arc::clone(state))),
     );
     registry.register(
         42,

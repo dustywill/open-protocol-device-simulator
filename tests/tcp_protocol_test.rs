@@ -464,6 +464,70 @@ fn test_unsupported_revision_for_select_job_family() {
     ));
 }
 
+#[test]
+fn test_select_job_revision_1() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(Arc::clone(&state), broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 22,
+        mid: 38,
+        revision: 1,
+        data: b"07".to_vec(),
+    };
+
+    let response = registry
+        .handle_message(&message)
+        .expect("Handler should succeed");
+    assert_eq!(response.mid, 5, "Should respond with MID 0005");
+
+    let device_state = state.read().unwrap();
+    assert_eq!(device_state.current_job_id, Some(7));
+}
+
+#[test]
+fn test_select_job_revision_2() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(Arc::clone(&state), broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 24,
+        mid: 38,
+        revision: 2,
+        data: b"0042".to_vec(),
+    };
+
+    let response = registry
+        .handle_message(&message)
+        .expect("Handler should succeed");
+    assert_eq!(response.mid, 5, "Should respond with MID 0005");
+
+    let device_state = state.read().unwrap();
+    assert_eq!(device_state.current_job_id, Some(42));
+}
+
+#[test]
+fn test_select_job_rejects_invalid_payload() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(state, broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 22,
+        mid: 38,
+        revision: 1,
+        data: b"A7".to_vec(),
+    };
+
+    let result = registry.handle_message(&message);
+    assert!(matches!(result, Err(handler::HandlerError::InvalidData(38))));
+}
+
 /// Test unknown MID handling
 #[test]
 fn test_unknown_mid() {
