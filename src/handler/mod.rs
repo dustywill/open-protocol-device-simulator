@@ -13,6 +13,7 @@ pub mod multi_spindle_status_ack;
 pub mod multi_spindle_status_subscribe;
 pub mod multi_spindle_status_unsubscribe;
 pub mod pset_select;
+pub mod pset_selected_ack;
 pub mod pset_subscription;
 pub mod pset_unsubscribe;
 pub mod tightening_result_ack;
@@ -134,6 +135,7 @@ pub fn create_default_registry(observable_state: ObservableState) -> HandlerRegi
         Box::new(communication_stop::CommunicationStopHandler::new()),
     );
     registry.register(14, Box::new(pset_subscription::PsetSubscriptionHandler));
+    registry.register(16, Box::new(pset_selected_ack::PsetSelectedAckHandler));
     registry.register(17, Box::new(pset_unsubscribe::PsetUnsubscribeHandler));
     registry.register(
         18,

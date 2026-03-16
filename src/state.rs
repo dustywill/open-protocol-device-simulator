@@ -3,6 +3,7 @@ use crate::device_fsm::DeviceFSMState;
 use crate::failure_simulator::FailureConfig;
 use crate::multi_spindle::{MultiSpindleConfig, MultiSpindleResultRecord};
 use crate::tightening_tracker::TighteningTracker;
+use chrono::Local;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
@@ -21,6 +22,8 @@ pub struct DeviceState {
     // Parameter set (pset) state
     pub current_pset_id: Option<u32>,
     pub current_pset_name: Option<String>,
+    #[serde(skip)]
+    pub current_pset_last_change: String,
 
     // Tightening tracking (single mode or batch mode)
     pub tightening_tracker: TighteningTracker,
@@ -56,6 +59,7 @@ impl DeviceState {
             supplier_code: "SIM".to_string(),
             current_pset_id: Some(1),
             current_pset_name: Some("Default".to_string()),
+            current_pset_last_change: Self::current_timestamp(),
             tightening_tracker: TighteningTracker::new(),
             device_fsm_state: DeviceFSMState::idle(),
             tool_enabled: true,
@@ -76,6 +80,7 @@ impl DeviceState {
             supplier_code: config.supplier_code.clone(),
             current_pset_id: Some(1),
             current_pset_name: Some("Default".to_string()),
+            current_pset_last_change: Self::current_timestamp(),
             tightening_tracker: TighteningTracker::new(),
             device_fsm_state: DeviceFSMState::idle(),
             tool_enabled: true,
@@ -101,6 +106,7 @@ impl DeviceState {
     pub fn set_pset(&mut self, pset_id: u32, pset_name: Option<String>) {
         self.current_pset_id = Some(pset_id);
         self.current_pset_name = pset_name;
+        self.current_pset_last_change = Self::current_timestamp();
     }
 
     /// Set the active job ID
@@ -216,6 +222,10 @@ impl DeviceState {
     #[allow(dead_code)]
     pub fn get_multi_spindle_config(&self) -> &MultiSpindleConfig {
         &self.multi_spindle_config
+    }
+
+    fn current_timestamp() -> String {
+        Local::now().format("%Y-%m-%d:%H:%M:%S").to_string()
     }
 }
 

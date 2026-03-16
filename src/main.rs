@@ -89,6 +89,26 @@ async fn send_with_failure_injection(
     Ok(true)
 }
 
+fn is_ack_only_mid(mid: u16) -> bool {
+    matches!(mid, 16 | 53 | 62 | 93 | 102)
+}
+
+fn build_pset_selected_broadcast(observable_state: &ObservableState) -> Option<protocol::Response> {
+    let (pset_id, last_change_timestamp) = {
+        let state = observable_state.read();
+        (
+            state.current_pset_id?,
+            state.current_pset_last_change.clone(),
+        )
+    };
+
+    Some(protocol::Response::from_data(
+        15,
+        1,
+        handler::data::PsetSelected::new(pset_id, last_change_timestamp),
+    ))
+}
+
 fn apply_session_side_effects(
     message: &protocol::Message,
     session: &mut session::ConnectionSession<session::Ready>,
@@ -240,6 +260,14 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                         // Handle the message
                                         match registry.handle_message(&message) {
                                             Ok(response) => {
+                                                if is_ack_only_mid(message.mid) {
+                                                    println!(
+                                                        "MID {:04}: ACK received, no response sent",
+                                                        message.mid
+                                                    );
+                                                    continue;
+                                                }
+
                                                 // Serialize and send response
                                                 let response_bytes = protocol::serializer::serialize_response(&response);
                                                 println!("Sending response: MID {}", response.mid);
@@ -288,6 +316,40 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                                         Ok(false) => {}
                                                         Err(e) => {
                                                             eprintln!("send error during initial VIN broadcast: {e}");
+                                                            break;
+                                                        }
+                                                        Ok(true) => {}
+                                                    }
+                                                }
+
+                                                if message.mid == 14
+                                                    && let Some(response) =
+                                                        build_pset_selected_broadcast(
+                                                            &conn_observable_state,
+                                                        )
+                                                {
+                                                    let response_bytes =
+                                                        protocol::serializer::serialize_response(
+                                                            &response,
+                                                        );
+                                                    println!(
+                                                        "Sending initial MID 0015 with current PSET to subscribed client ({})",
+                                                        session.addr()
+                                                    );
+
+                                                    match send_with_failure_injection(
+                                                        &mut framed,
+                                                        response_bytes,
+                                                        &conn_observable_state,
+                                                        "MID 0015 initial PSET",
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(false) => {}
+                                                        Err(e) => {
+                                                            eprintln!(
+                                                                "send error during initial PSET broadcast: {e}"
+                                                            );
                                                             break;
                                                         }
                                                         Ok(true) => {}
@@ -376,8 +438,11 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                             SimulatorEvent::PsetChanged { pset_id, pset_name: _ } => {
                                 if session.subscriptions().is_subscribed_to_pset_selection() {
                                     println!("Broadcasting MID 0015 to subscribed client ({}): pset {}", session.addr(), pset_id);
-                                    let pset_data = handler::data::PsetSelected::new(pset_id);
-                                    let response = protocol::Response::from_data(15, 1, pset_data);
+                                    let Some(response) =
+                                        build_pset_selected_broadcast(&conn_observable_state)
+                                    else {
+                                        continue;
+                                    };
                                     let response_bytes = protocol::serializer::serialize_response(&response);
 
                                     match send_with_failure_injection(
@@ -520,4 +585,20 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
 pub enum ServeError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_ack_only_mid;
+
+    #[test]
+    fn test_ack_only_mids_do_not_require_responses() {
+        assert!(is_ack_only_mid(16));
+        assert!(is_ack_only_mid(53));
+        assert!(is_ack_only_mid(62));
+        assert!(is_ack_only_mid(93));
+        assert!(is_ack_only_mid(102));
+        assert!(!is_ack_only_mid(60));
+        assert!(!is_ack_only_mid(61));
+    }
 }
