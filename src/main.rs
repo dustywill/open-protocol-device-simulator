@@ -226,8 +226,7 @@ async fn serve_tcp_client(settings: Settings) -> Result<(), ServeError> {
                                             Err(e) => {
                                                 eprintln!("Handler error: {e}");
                                                 // Send error response (MID 0004)
-                                                let error_response = handler::data::ErrorResponse::generic(message.mid);
-                                                let response = protocol::Response::from_data(4, message.revision, error_response);
+                                                let response = e.to_error_response(message.revision);
                                                 let response_bytes = protocol::serializer::serialize_response(&response);
                                                 println!("Sending error response: MID 0004 for failed MID {}", message.mid);
 

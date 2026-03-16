@@ -260,6 +260,30 @@ fn test_tightening_result_subscription() {
     assert_eq!(response.mid, 5, "Should respond with MID 0005");
 }
 
+#[test]
+fn test_unsupported_revision_for_tightening_result_subscription() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(state, broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 20,
+        mid: 60,
+        revision: 4,
+        data: vec![],
+    };
+
+    let result = registry.handle_message(&message);
+    assert!(matches!(
+        result,
+        Err(handler::HandlerError::RevisionUnsupported {
+            mid: 60,
+            revision: 4
+        })
+    ));
+}
+
 /// Test MID 0014/0017 - Parameter Set Subscription
 #[test]
 fn test_pset_subscription() {
@@ -390,6 +414,54 @@ fn test_multi_spindle_result_subscription() {
         .handle_message(&message)
         .expect("Handler should succeed");
     assert_eq!(response.mid, 5, "Should respond with MID 0005");
+}
+
+#[test]
+fn test_unsupported_revision_for_multi_spindle_result_subscription() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(state, broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 20,
+        mid: 100,
+        revision: 4,
+        data: vec![],
+    };
+
+    let result = registry.handle_message(&message);
+    assert!(matches!(
+        result,
+        Err(handler::HandlerError::RevisionUnsupported {
+            mid: 100,
+            revision: 4
+        })
+    ));
+}
+
+#[test]
+fn test_unsupported_revision_for_select_job_family() {
+    let state = Arc::new(RwLock::new(DeviceState::new()));
+    let (broadcaster, _) = tokio::sync::broadcast::channel::<SimulatorEvent>(100);
+    let observable_state = ObservableState::new(state, broadcaster);
+    let registry = handler::create_default_registry(observable_state);
+
+    let message = protocol::Message {
+        length: 20,
+        mid: 38,
+        revision: 3,
+        data: vec![],
+    };
+
+    let result = registry.handle_message(&message);
+    assert!(matches!(
+        result,
+        Err(handler::HandlerError::RevisionUnsupported {
+            mid: 38,
+            revision: 3
+        })
+    ));
 }
 
 /// Test unknown MID handling

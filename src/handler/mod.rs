@@ -35,9 +35,34 @@ pub enum HandlerError {
     #[error("Unknown MID: {0}")]
     UnknownMid(u16),
 
+    #[error("Unsupported revision {revision} for MID {mid}")]
+    RevisionUnsupported { mid: u16, revision: u8 },
+
     #[error("Handler error: {0}")]
     #[allow(dead_code)]
     Processing(String),
+}
+
+impl HandlerError {
+    pub fn to_error_response(&self, request_revision: u8) -> Response {
+        let error_data = match self {
+            Self::UnknownMid(mid) => data::ErrorResponse::generic(*mid),
+            Self::RevisionUnsupported { mid, .. } => {
+                data::ErrorResponse::revision_unsupported(*mid)
+            }
+            Self::Processing(_) => data::ErrorResponse::generic(0),
+        };
+
+        Response::from_data(4, request_revision, error_data)
+    }
+}
+
+pub fn is_revision_supported(mid: u16, revision: u8) -> bool {
+    match mid {
+        38 => matches!(revision, 1 | 2),
+        60 | 61 | 100 | 101 => matches!(revision, 1 | 2 | 3),
+        _ => true,
+    }
 }
 
 /// Trait for handling specific MID messages
@@ -65,6 +90,13 @@ impl HandlerRegistry {
 
     /// Process a message using the appropriate handler
     pub fn handle_message(&self, message: &Message) -> Result<Response, HandlerError> {
+        if !is_revision_supported(message.mid, message.revision) {
+            return Err(HandlerError::RevisionUnsupported {
+                mid: message.mid,
+                revision: message.revision,
+            });
+        }
+
         let handler = self
             .handlers
             .get(&message.mid)
@@ -184,4 +216,21 @@ pub fn create_default_registry(observable_state: ObservableState) -> HandlerRegi
     registry.register(9999, Box::new(keep_alive::KeepAliveHandler));
 
     registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_revision_supported;
+
+    #[test]
+    fn test_revision_support_policy() {
+        assert!(is_revision_supported(38, 1));
+        assert!(is_revision_supported(38, 2));
+        assert!(!is_revision_supported(38, 3));
+        assert!(is_revision_supported(60, 3));
+        assert!(!is_revision_supported(60, 4));
+        assert!(is_revision_supported(100, 2));
+        assert!(!is_revision_supported(100, 4));
+        assert!(is_revision_supported(42, 9));
+    }
 }
